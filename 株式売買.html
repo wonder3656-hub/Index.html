@@ -1,0 +1,1855 @@
+﻿```html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>株式売買出納帳 - Stock Trading Ledger</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans JP -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 等幅数字（桁揃え） */
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+
+
+        /* スクロールバー */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+
+        /* トーストアニメーション */
+        @keyframes slideInUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-enter {
+            animation: slideInUp 0.25s ease-out forwards;
+        }
+
+
+        /* A4横向き帳簿印刷レイアウト */
+        @media print {
+            @page {
+                size: A4 landscape;
+                margin: 10mm;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                font-size: 9pt !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            .print-container {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+            .print-table-wrapper {
+                overflow: visible !important;
+                border: 1px solid #334155 !important;
+                border-radius: 0 !important;
+            }
+            table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+            }
+            th, td {
+                border: 1px solid #cbd5e1 !important;
+                padding: 4px 6px !important;
+                font-size: 8pt !important;
+            }
+            th {
+                background-color: #f1f5f9 !important;
+                color: #0f172a !important;
+            }
+            tr {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+
+    <!-- 印刷用ヘッダー（画面では非表示、印刷時のみ表示） -->
+    <div class="print-only hidden mb-3 border-b-2 border-slate-800 pb-2">
+        <div class="flex justify-between items-end">
+            <div>
+                <h1 class="text-xl font-bold tracking-widest text-slate-900">株 式 売 買 出 納 帳</h1>
+                <p id="print-filter-label" class="text-xs text-slate-600 mt-1">対象口座: すべての口座 ／ 対象期間: 全期間</p>
+            </div>
+            <div class="text-right text-xs text-slate-600 flex items-end gap-4">
+                <p id="print-date-label">出力日: 2026年11月27日</p>
+                <div class="inline-flex border border-slate-500">
+                    <div class="w-14 h-11 border-r border-slate-500 text-center text-[9px] pt-0.5">検印</div>
+                    <div class="w-14 h-11 text-center text-[9px] pt-0.5">作成</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ナビゲーションヘッダー -->
+    <header class="no-print bg-slate-900 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center shadow-inner">
+                    <i class="fa-solid fa-chart-line text-white text-base"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight leading-none">株式売買出納帳</h1>
+                    <span class="text-[11px] text-slate-400">Stock Trading Cash &amp; Transaction Ledger</span>
+                </div>
+            </div>
+
+
+            <!-- ツールバー -->
+            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+                <button onclick="openCarryOverModal()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1.5" title="期首預り金（初期買付余力）の設定">
+                    <i class="fa-solid fa-vault text-amber-400"></i>
+                    <span class="hidden md:inline">期首残高設定</span>
+                </button>
+                <button onclick="exportCSV()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1.5" title="Excel対応CSV出力">
+                    <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                    <span class="hidden sm:inline">CSV出力</span>
+                </button>
+                <label class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1.5 cursor-pointer" title="CSVファイルの読み込み">
+                    <i class="fa-solid fa-file-import text-sky-400"></i>
+                    <span class="hidden sm:inline">CSV読込</span>
+                    <input type="file" id="csv-file-input" accept=".csv" class="hidden" onchange="importCSV(event)">
+                </label>
+                <button onclick="window.print()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center gap-1.5" title="A4横向き帳簿形式で印刷">
+                    <i class="fa-solid fa-print text-slate-300"></i>
+                    <span class="hidden sm:inline">印刷 (A4横)</span>
+                </button>
+                <!-- サブメニュー -->
+                <div class="relative" id="more-menu-container">
+                    <button onclick="toggleMoreMenu()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" aria-label="その他の操作">
+                        <i class="fa-solid fa-ellipsis-vertical"></i>
+                    </button>
+                    <div id="more-menu" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 text-slate-700 z-50">
+                        <button onclick="confirmAction('sample')" class="w-full text-left px-4 py-2.5 text-xs hover:bg-slate-50 flex items-center gap-2.5 transition">
+                            <i class="fa-solid fa-wand-magic-sparkles text-indigo-600 w-4"></i>
+                            サンプルデータ読込
+                        </button>
+                        <div class="border-t border-slate-100 my-1"></div>
+                        <button onclick="confirmAction('reset')" class="w-full text-left px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition">
+                            <i class="fa-solid fa-trash-can w-4"></i>
+                            全データ消去（初期化）
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+
+    <!-- メインコンテンツ -->
+    <main class="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print-container space-y-6">
+
+
+        <!-- 1. サマリーKPIダッシュボード -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- 買付余力 / 口座残高 -->
+            <div class="bg-slate-900 text-white rounded-xl p-5 border border-slate-800 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <span id="kpi-balance-label" class="text-xs font-semibold text-slate-300 tracking-wide">買付余力 / 口座残高</span>
+                    <span class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-wallet"></i>
+                    </span>
+                </div>
+                <div class="mt-3">
+                    <p id="kpi-balance" class="text-2xl sm:text-3xl font-bold tracking-tight tabular-nums">¥0</p>
+                    <p id="kpi-carryover-sub" class="text-[11px] text-slate-400 mt-1 tabular-nums">期首残高: ¥0</p>
+                </div>
+            </div>
+
+
+            <!-- 期間内 実現損益合計 -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 tracking-wide">期間内 実現損益合計</span>
+                    <span class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </span>
+                </div>
+                <div class="mt-3">
+                    <p id="kpi-realized-pl" class="text-2xl font-bold text-slate-800 tabular-nums">¥0</p>
+                    <p id="kpi-win-rate" class="text-[11px] text-slate-500 mt-1 tabular-nums">決済: 0件（勝率: -%）</p>
+                </div>
+            </div>
+
+
+            <!-- 期間内 配当金・分配金累計 -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 tracking-wide">期間内 配当金・分配金（税引後）</span>
+                    <span class="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-hand-holding-dollar"></i>
+                    </span>
+                </div>
+                <div class="mt-3">
+                    <p id="kpi-dividends" class="text-2xl font-bold text-sky-600 tabular-nums">¥0</p>
+                    <p id="kpi-dividends-gross" class="text-[11px] text-slate-500 mt-1 tabular-nums">税引前受取額: ¥0</p>
+                </div>
+            </div>
+
+
+            <!-- 期間内 手数料・税金合計 -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 tracking-wide">期間内 手数料・源泉税合計</span>
+                    <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </span>
+                </div>
+                <div class="mt-3">
+                    <p id="kpi-fees-taxes" class="text-2xl font-bold text-slate-700 tabular-nums">¥0</p>
+                    <p id="kpi-fees-taxes-sub" class="text-[11px] text-slate-500 mt-1 tabular-nums">手数料: ¥0 ／ 税金: ¥0</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 2. 取引記帳・編集フォーム（印刷時は非表示） -->
+        <section id="form-section" class="no-print bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="bg-slate-50 px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <i id="form-header-icon" class="fa-solid fa-pen-to-square text-indigo-600"></i>
+                    <h2 id="form-title" class="text-sm font-bold text-slate-800">株式取引・入出金の記帳</h2>
+                    <span id="edit-badge" class="hidden px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                        編集中モード
+                    </span>
+                </div>
+
+
+                <!-- リアルタイム受渡金額プレビュー -->
+                <div class="flex items-center gap-3 bg-white px-3.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                    <span class="text-xs font-semibold text-slate-500">受渡金額（口座増減プレビュー）:</span>
+                    <span id="preview-settlement" class="text-sm font-bold tabular-nums text-slate-800">¥0</span>
+                </div>
+            </div>
+
+
+            <form id="transaction-form" onsubmit="handleFormSubmit(event)" class="p-5 space-y-4">
+                <input type="hidden" id="edit-id" value="">
+
+
+                <!-- 1段目：基本情報 -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5 items-end">
+                    <!-- 約定日 -->
+                    <div class="lg:col-span-2">
+                        <label for="input-date" class="block text-xs font-semibold text-slate-600 mb-1">約定日 <span class="text-rose-500">*</span></label>
+                        <input type="date" id="input-date" required onchange="onFormFieldChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+
+                    <!-- 口座区分 -->
+                    <div class="lg:col-span-2">
+                        <label for="input-account" class="block text-xs font-semibold text-slate-600 mb-1">口座区分 <span class="text-rose-500">*</span></label>
+                        <select id="input-account" onchange="onFormFieldChange()" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="特定(源泉あり)">特定(源泉あり)</option>
+                            <option value="特定(源泉なし)">特定(源泉なし)</option>
+                            <option value="一般">一般口座</option>
+                            <option value="NISA成長">NISA成長投資枠</option>
+                            <option value="NISAつみたて">NISAつみたて投資枠</option>
+                        </select>
+                    </div>
+
+
+                    <!-- 取引区分 -->
+                    <div class="lg:col-span-2">
+                        <label for="input-tx-type" class="block text-xs font-semibold text-slate-600 mb-1">取引区分 <span class="text-rose-500">*</span></label>
+                        <select id="input-tx-type" onchange="handleTxTypeChange()" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="buy">買付（現物買）</option>
+                            <option value="sell">売却（現物売）</option>
+                            <option value="dividend">配当・分配金</option>
+                            <option value="margin_pl">信用決済損益</option>
+                            <option value="deposit">入金（口座振込）</option>
+                            <option value="withdrawal">出金（銀行出金）</option>
+                        </select>
+                    </div>
+
+
+                    <!-- 銘柄コード -->
+                    <div class="lg:col-span-2">
+                        <label for="input-ticker" class="block text-xs font-semibold text-slate-600 mb-1">銘柄コード</label>
+                        <input type="text" id="input-ticker" placeholder="例: 7203, AAPL" oninput="onTickerOrQtyChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                    </div>
+
+
+                    <!-- 銘柄名・摘要 -->
+                    <div class="sm:col-span-2 lg:col-span-4">
+                        <label for="input-name" class="block text-xs font-semibold text-slate-600 mb-1">銘柄名・摘要 <span class="text-rose-500">*</span></label>
+                        <input type="text" id="input-name" required placeholder="例: トヨタ自動車 / 銀行より入金" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+
+                <!-- 2段目：数量・単価・手数料・税金・実現損益・登録ボタン -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5 items-end pt-1">
+                    <!-- 数量（株） -->
+                    <div class="lg:col-span-2">
+                        <label for="input-qty" class="block text-xs font-semibold text-slate-600 mb-1">数量（株・口）</label>
+                        <input type="number" id="input-qty" min="0" step="1" placeholder="100" oninput="onTickerOrQtyChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-right tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                    </div>
+
+
+                    <!-- 約定単価 / 金額 -->
+                    <div class="lg:col-span-2">
+                        <label id="label-price" for="input-price" class="block text-xs font-semibold text-slate-600 mb-1">約定単価（円）</label>
+                        <input type="number" id="input-price" step="0.01" placeholder="0" oninput="onTickerOrQtyChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-right tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+
+                    <!-- 手数料・諸費用 -->
+                    <div class="lg:col-span-2">
+                        <label for="input-fee" class="block text-xs font-semibold text-slate-600 mb-1">手数料・諸費用</label>
+                        <input type="number" id="input-fee" min="0" step="1" placeholder="0" oninput="onTickerOrQtyChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-right tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                    </div>
+
+
+                    <!-- 税金・源泉徴収 -->
+                    <div class="lg:col-span-2">
+                        <label for="input-tax" class="block text-xs font-semibold text-slate-600 mb-1">税金・源泉徴収</label>
+                        <input type="number" id="input-tax" min="0" step="1" placeholder="0" oninput="onFormFieldChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-right tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                    </div>
+
+
+                    <!-- 実現損益（売却時・信用決済時） -->
+                    <div class="lg:col-span-2">
+                        <div class="flex items-center justify-between mb-1">
+                            <label for="input-realized-pl" class="block text-xs font-semibold text-slate-600">実現損益（税引前）</label>
+                            <span id="avg-cost-hint" class="text-[10px] text-indigo-600 font-medium hidden"></span>
+                        </div>
+                        <input type="number" id="input-realized-pl" step="1" placeholder="自動計算/手入力" oninput="onFormFieldChange()" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-right font-semibold tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                    </div>
+
+
+                    <!-- 登録ボタン -->
+                    <div class="sm:col-span-2 lg:col-span-2 flex gap-2">
+                        <button type="submit" id="btn-submit" class="w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>記帳する</span>
+                        </button>
+                        <button type="button" id="btn-cancel-edit" onclick="cancelEdit()" class="hidden py-2 px-3 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition shrink-0">
+                            取消
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+
+        <!-- 3. 保有銘柄・平均取得単価サマリー（折りたたみ可能 / 印刷時は非表示） -->
+        <section class="no-print bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <button type="button" onclick="toggleHoldingsPanel()" class="w-full bg-slate-50 hover:bg-slate-100/80 px-5 py-3 border-b border-slate-200 flex items-center justify-between transition text-left">
+                <div class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-layer-group text-indigo-600"></i>
+                    <h2 class="text-sm font-bold text-slate-800">保有銘柄・平均取得単価サマリー（移動平均法）</h2>
+                    <span id="holdings-count-badge" class="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">0銘柄</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="holdings-total-cost" class="text-xs font-semibold text-slate-600 tabular-nums hidden sm:inline">保有取得総額: ¥0</span>
+                    <i id="holdings-chevron" class="fa-solid fa-chevron-up text-slate-400 text-xs transition-transform"></i>
+                </div>
+            </button>
+
+
+            <div id="holdings-panel-body" class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50/70 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                            <th class="py-2.5 px-4 whitespace-nowrap">口座区分</th>
+                            <th class="py-2.5 px-4 whitespace-nowrap">コード</th>
+                            <th class="py-2.5 px-4 whitespace-nowrap">銘柄名</th>
+                            <th class="py-2.5 px-4 text-right whitespace-nowrap">保有株数</th>
+                            <th class="py-2.5 px-4 text-right whitespace-nowrap">平均取得単価</th>
+                            <th class="py-2.5 px-4 text-right whitespace-nowrap">取得総額（簿価）</th>
+                            <th class="py-2.5 px-4 text-right whitespace-nowrap">累計実現損益</th>
+                            <th class="py-2.5 px-4 text-center whitespace-nowrap">クイック操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdings-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                        <!-- JSで動的に生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+
+        <!-- 4. フィルターバー ＆ 株式売買出納帳テーブル -->
+        <section class="space-y-3">
+            <!-- フィルターバー（印刷時は非表示） -->
+            <div class="no-print bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <!-- 口座フィルター -->
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-building-columns text-slate-400 text-xs"></i>
+                        <select id="filter-account" onchange="renderAll()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">すべての口座</option>
+                            <option value="特定(源泉あり)">特定(源泉あり)</option>
+                            <option value="特定(源泉なし)">特定(源泉なし)</option>
+                            <option value="一般">一般口座</option>
+                            <option value="NISA成長">NISA成長投資枠</option>
+                            <option value="NISAつみたて">NISAつみたて投資枠</option>
+                        </select>
+                    </div>
+
+
+                    <!-- 月別フィルター -->
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-regular fa-calendar text-slate-400 text-xs"></i>
+                        <select id="filter-month" onchange="renderAll()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">全期間</option>
+                        </select>
+                    </div>
+
+
+                    <!-- 取引区分フィルター -->
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-filter text-slate-400 text-xs"></i>
+                        <select id="filter-tx-type" onchange="renderAll()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">すべての取引区分</option>
+                            <option value="buy">買付のみ</option>
+                            <option value="sell">売却のみ</option>
+                            <option value="dividend">配当・分配金のみ</option>
+                            <option value="margin_pl">信用決済損益のみ</option>
+                            <option value="deposit">入金のみ</option>
+                            <option value="withdrawal">出金のみ</option>
+                        </select>
+                    </div>
+                </div>
+
+
+                <!-- 銘柄コード・キーワード検索 -->
+                <div class="relative flex-1 lg:max-w-xs">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input type="text" id="filter-keyword" oninput="renderAll()" placeholder="銘柄コード・銘柄名・摘要で検索..." class="w-full rounded-lg border border-slate-300 pl-8 pr-8 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button type="button" id="clear-keyword-btn" onclick="clearKeyword()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-circle-xmark text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+
+            <!-- 出納帳明細テーブル -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-table-wrapper">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 border-b border-slate-300 text-slate-700 text-[11px] font-bold tracking-wider">
+                                <th class="py-3 px-2.5 whitespace-nowrap">約定日</th>
+                                <th class="py-3 px-2.5 whitespace-nowrap">口座</th>
+                                <th class="py-3 px-2.5 whitespace-nowrap text-center">区分</th>
+                                <th class="py-3 px-2.5 whitespace-nowrap">コード</th>
+                                <th class="py-3 px-2.5 min-w-[150px]">銘柄名・摘要</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap">数量</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap">約定単価</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap">手数料・税</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap text-emerald-800">受入金額</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap text-rose-800">払出金額</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap">実現損益</th>
+                                <th class="py-3 px-2.5 text-right whitespace-nowrap bg-slate-200/60 text-slate-900">口座残高</th>
+                                <th class="no-print py-3 px-2 text-center whitespace-nowrap">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ledger-tbody" class="divide-y divide-slate-200 text-xs">
+                            <!-- JSで動的に行を生成 -->
+                        </tbody>
+                        <tfoot id="ledger-tfoot" class="bg-slate-50 border-t-2 border-slate-300 font-bold text-xs">
+                            <!-- JSで合計行を生成 -->
+                        </tfoot>
+                    </table>
+                </div>
+
+
+                <!-- データが空の時の表示 -->
+                <div id="empty-state" class="hidden py-12 px-4 text-center">
+                    <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3 text-lg">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                    <p class="text-sm font-semibold text-slate-700">該当する取引記録がありません</p>
+                    <p class="text-xs text-slate-500 mt-1">上のフォームから株式売買や入出金を記帳するか、フィルター条件を変更してください。</p>
+                </div>
+            </div>
+        </section>
+
+
+    </main>
+
+
+    <!-- フッター -->
+    <footer class="no-print bg-white border-t border-slate-200 py-4 mt-12">
+        <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <p>データはご利用のブラウザ（LocalStorage）に自動保存されます。確定申告や年間取引報告書の照合にご活用ください。</p>
+            <p>定期的なCSV出力によるバックアップをおすすめします。</p>
+        </div>
+    </footer>
+
+
+    <!-- モーダル1：期首残高設定 -->
+    <div id="carryover-modal" class="no-print hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-vault text-amber-500"></i>
+                    期首預り金（初期残高）の設定
+                </h3>
+                <button onclick="closeCarryOverModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed mb-4">
+                口座区分ごとに帳簿開始時点の買付余力（預り金残高）を設定できます。月別表示を選択した場合は、前月末までの累積残高が自動的に「前月繰越」として計算されます。
+            </p>
+            <form onsubmit="saveCarryOver(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">特定(源泉あり) 期首残高</label>
+                    <input type="number" id="carry-tokutei-ari" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-right tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">特定(源泉なし) 期首残高</label>
+                    <input type="number" id="carry-tokutei-nashi" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-right tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">一般口座 期首残高</label>
+                    <input type="number" id="carry-ippan" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-right tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">NISA成長投資枠 期首残高</label>
+                    <input type="number" id="carry-nisa-growth" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-right tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">NISAつみたて投資枠 期首残高</label>
+                    <input type="number" id="carry-nisa-tsumitate" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-right tabular-nums">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeCarryOverModal()" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition">
+                        キャンセル
+                    </button>
+                    <button type="submit" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition">
+                        設定を保存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- モーダル2：確認ダイアログ -->
+    <div id="confirm-modal" class="no-print hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex items-center gap-3 mb-3">
+                <div id="confirm-icon-bg" class="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                    <i id="confirm-icon" class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 id="confirm-title" class="text-base font-bold text-slate-800">確認</h3>
+            </div>
+            <p id="confirm-message" class="text-xs text-slate-600 leading-relaxed mb-6"></p>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="closeConfirmModal()" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition">
+                    キャンセル
+                </button>
+                <button type="button" id="confirm-execute-btn" class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm transition">
+                    実行する
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- トースト通知エリア -->
+    <div id="toast-container" class="no-print fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+
+    <script>
+        // ==========================================
+        // 1. 状態管理・定数定義
+        // ==========================================
+        const STORAGE_KEY_TX = 'stock_cashbook_tx_v1';
+        const STORAGE_KEY_CARRY = 'stock_cashbook_carry_v1';
+
+
+        const ACCOUNTS = [
+            '特定(源泉あり)',
+            '特定(源泉なし)',
+            '一般',
+            'NISA成長',
+            'NISAつみたて'
+        ];
+
+
+        const TX_TYPE_META = {
+            buy:        { label: '買付',     badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+            sell:       { label: '売却',     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+            dividend:   { label: '配当・分配', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200' },
+            margin_pl:  { label: '信用決済', badgeClass: 'bg-purple-50 text-purple-700 border-purple-200' },
+            deposit:    { label: '入金',     badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+            withdrawal: { label: '出金',     badgeClass: 'bg-slate-100 text-slate-700 border-slate-300' }
+        };
+
+
+        let transactions = [];
+        let carryOvers = {
+            '特定(源泉あり)': 0,
+            '特定(源泉なし)': 0,
+            '一般': 0,
+            'NISA成長': 0,
+            'NISAつみたて': 0
+        };
+        let lastDeletedItem = null;
+        let isHoldingsOpen = true;
+
+
+        // ==========================================
+        // 2. 初期化
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFromStorage();
+            setDefaultDate();
+            handleTxTypeChange();
+            updateMonthFilterOptions();
+            renderAll();
+
+
+            document.addEventListener('click', (e) => {
+                const container = document.getElementById('more-menu-container');
+                const menu = document.getElementById('more-menu');
+                if (container && !container.contains(e.target)) {
+                    menu.classList.add('hidden');
+                }
+            });
+        });
+
+
+        function loadFromStorage() {
+            try {
+                const savedTx = localStorage.getItem(STORAGE_KEY_TX);
+                const savedCarry = localStorage.getItem(STORAGE_KEY_CARRY);
+                if (savedTx) transactions = JSON.parse(savedTx);
+                if (savedCarry) carryOvers = { ...carryOvers, ...JSON.parse(savedCarry) };
+
+
+                if (!savedTx && !savedCarry) {
+                    loadSampleData(true);
+                }
+            } catch (err) {
+                console.error('読込エラー:', err);
+            }
+        }
+
+
+        function saveToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(transactions));
+                localStorage.setItem(STORAGE_KEY_CARRY, JSON.stringify(carryOvers));
+            } catch (err) {
+                showToast('ブラウザの保存容量上限に達しました。', 'error');
+            }
+        }
+
+
+        function setDefaultDate() {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            document.getElementById('input-date').value = `${yyyy}-${mm}-${dd}`;
+        }
+
+
+        // ==========================================
+        // 3. 保有銘柄・移動平均取得単価の計算エンジン
+        // ==========================================
+        /**
+         * 全取引を時系列で走査し、口座×銘柄コードごとの現在保有株数・平均取得単価・累計実現損益を算出する
+         * @param {string|null} excludeTxId 編集中の取引を除外して計算する場合に指定
+         */
+        function computeHoldingsMap(excludeTxId = null) {
+            const sorted = [...transactions]
+                .filter(t => t.id !== excludeTxId)
+                .sort((a, b) => {
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return (a.createdAt || 0) - (b.createdAt || 0);
+                });
+
+
+            const map = {}; // key: `${account}__${ticker}`
+
+
+            sorted.forEach(t => {
+                const ticker = (t.ticker || '').trim().toUpperCase();
+                if (!ticker) return;
+                const key = `${t.account}__${ticker}`;
+
+
+                if (!map[key]) {
+                    map[key] = {
+                        account: t.account,
+                        ticker: ticker,
+                        name: t.name || '',
+                        qty: 0,
+                        totalCost: 0,
+                        avgCost: 0,
+                        realizedPL: 0
+                    };
+                }
+
+
+                const h = map[key];
+                if (t.name) h.name = t.name;
+
+
+                if (t.type === 'buy') {
+                    const buyQty = Number(t.qty) || 0;
+                    const buyCost = Math.round((Number(t.qty) || 0) * (Number(t.price) || 0)) + (Number(t.fee) || 0);
+                    h.qty += buyQty;
+                    h.totalCost += buyCost;
+                    h.avgCost = h.qty > 0 ? h.totalCost / h.qty : 0;
+                } else if (t.type === 'sell') {
+                    const sellQty = Number(t.qty) || 0;
+                    const costRemoved = h.avgCost * sellQty;
+                    h.qty = Math.max(0, h.qty - sellQty);
+                    h.totalCost = h.qty > 0 ? Math.max(0, h.totalCost - costRemoved) : 0;
+                    if (h.qty === 0) h.avgCost = 0;
+                    h.realizedPL += (Number(t.realizedPL) || 0);
+                } else if (t.type === 'margin_pl') {
+                    h.realizedPL += (Number(t.realizedPL) || 0);
+                }
+            });
+
+
+            return map;
+        }
+
+
+        // ==========================================
+        // 4. フォーム制御・受渡金額＆実現損益プレビュー
+        // ==========================================
+        function handleTxTypeChange() {
+            const txType = document.getElementById('input-tx-type').value;
+            const tickerEl = document.getElementById('input-ticker');
+            const qtyEl = document.getElementById('input-qty');
+            const feeEl = document.getElementById('input-fee');
+            const taxEl = document.getElementById('input-tax');
+            const plEl = document.getElementById('input-realized-pl');
+            const labelPrice = document.getElementById('label-price');
+            const hintEl = document.getElementById('avg-cost-hint');
+
+
+            hintEl.classList.add('hidden');
+
+
+            // 入力項目の有効/無効とラベル切り替え
+            if (txType === 'buy') {
+                tickerEl.disabled = false;
+                qtyEl.disabled = false;
+                feeEl.disabled = false;
+                taxEl.disabled = true;
+                taxEl.value = '';
+                plEl.disabled = true;
+                plEl.value = '';
+                labelPrice.textContent = '約定単価（円）';
+            } else if (txType === 'sell') {
+                tickerEl.disabled = false;
+                qtyEl.disabled = false;
+                feeEl.disabled = false;
+                taxEl.disabled = false;
+                plEl.disabled = false;
+                labelPrice.textContent = '売却単価（円）';
+                onTickerOrQtyChange(); // 保有株があれば実現損益を自動試算
+            } else if (txType === 'dividend') {
+                tickerEl.disabled = false;
+                qtyEl.disabled = false;
+                feeEl.disabled = true;
+                feeEl.value = '';
+                taxEl.disabled = false;
+                plEl.disabled = true;
+                plEl.value = '';
+                labelPrice.textContent = '配当金額（税引前総額）';
+            } else if (txType === 'margin_pl') {
+                tickerEl.disabled = false;
+                qtyEl.disabled = false;
+                feeEl.disabled = false;
+                taxEl.disabled = false;
+                plEl.disabled = false;
+                labelPrice.textContent = '決済差損益（税引前）';
+            } else if (txType === 'deposit' || txType === 'withdrawal') {
+                tickerEl.disabled = true;
+                tickerEl.value = '';
+                qtyEl.disabled = true;
+                qtyEl.value = '';
+                feeEl.disabled = txType === 'deposit';
+                if (txType === 'deposit') feeEl.value = '';
+                taxEl.disabled = true;
+                taxEl.value = '';
+                plEl.disabled = true;
+                plEl.value = '';
+                labelPrice.textContent = txType === 'deposit' ? '入金額（円）' : '出金額（円）';
+            }
+
+
+            onFormFieldChange();
+        }
+
+
+        function onTickerOrQtyChange() {
+            const txType = document.getElementById('input-tx-type').value;
+            const account = document.getElementById('input-account').value;
+            const ticker = document.getElementById('input-ticker').value.trim().toUpperCase();
+            const qty = Number(document.getElementById('input-qty').value) || 0;
+            const price = Number(document.getElementById('input-price').value) || 0;
+            const fee = Number(document.getElementById('input-fee').value) || 0;
+            const editId = document.getElementById('edit-id').value || null;
+            const hintEl = document.getElementById('avg-cost-hint');
+
+
+            if (txType === 'sell' && ticker) {
+                const holdings = computeHoldingsMap(editId);
+                const h = holdings[`${account}__${ticker}`];
+                if (h && h.qty > 0) {
+                    hintEl.textContent = `平均取得: ¥${Math.round(h.avgCost).toLocaleString()} (保有${h.qty}株)`;
+                    hintEl.classList.remove('hidden');
+
+
+                    // 銘柄名が空なら自動補完
+                    const nameInput = document.getElementById('input-name');
+                    if (!nameInput.value && h.name) {
+                        nameInput.value = h.name;
+                    }
+
+
+                    // 売却数量と単価が入力されていれば実現損益を自動計算してセット
+                    if (qty > 0 && price > 0) {
+                        const grossProceeds = Math.round(qty * price);
+                        const costBasis = Math.round(h.avgCost * qty);
+                        const estimatedPL = grossProceeds - costBasis - fee;
+                        document.getElementById('input-realized-pl').value = estimatedPL;
+                    }
+                } else {
+                    hintEl.classList.add('hidden');
+                }
+            } else if (txType === 'margin_pl') {
+                // 信用決済の場合は決済差損益＝実現損益に同期
+                const gross = Number(document.getElementById('input-price').value) || 0;
+                if (gross !== 0) {
+                    document.getElementById('input-realized-pl').value = gross - fee;
+                }
+            } else {
+                hintEl.classList.add('hidden');
+            }
+
+
+            onFormFieldChange();
+        }
+
+
+        /**
+         * 1件の取引オブジェクトから口座現金の増減（受渡金額: プラスなら受入、マイナスなら払出）を計算
+         */
+        function calcCashImpact(tx) {
+            const qty = Number(tx.qty) || 0;
+            const price = Number(tx.price) || 0;
+            const fee = Number(tx.fee) || 0;
+            const tax = Number(tx.tax) || 0;
+
+
+            switch (tx.type) {
+                case 'buy':
+                    return -(Math.round(qty * price) + fee);
+                case 'sell':
+                    return Math.round(qty * price) - fee - tax;
+                case 'dividend':
+                    return Math.round(price) - tax;
+                case 'margin_pl':
+                    return Math.round(price) - fee - tax;
+                case 'deposit':
+                    return Math.round(price);
+                case 'withdrawal':
+                    return -(Math.round(price) + fee);
+                default:
+                    return 0;
+            }
+        }
+
+
+        function onFormFieldChange() {
+            const tempTx = {
+                type: document.getElementById('input-tx-type').value,
+                qty: document.getElementById('input-qty').value,
+                price: document.getElementById('input-price').value,
+                fee: document.getElementById('input-fee').value,
+                tax: document.getElementById('input-tax').value
+            };
+            const impact = calcCashImpact(tempTx);
+            const previewEl = document.getElementById('preview-settlement');
+
+
+            if (impact > 0) {
+                previewEl.textContent = `+${formatCurrency(impact)}（受入）`;
+                previewEl.className = 'text-sm font-bold tabular-nums text-emerald-600';
+            } else if (impact < 0) {
+                previewEl.textContent = `${formatCurrency(impact)}（払出）`;
+                previewEl.className = 'text-sm font-bold tabular-nums text-rose-600';
+            } else {
+                previewEl.textContent = '¥0';
+                previewEl.className = 'text-sm font-bold tabular-nums text-slate-800';
+            }
+        }
+
+
+        // ==========================================
+        // 5. CRUD操作（記帳・編集・削除・クイック売却）
+        // ==========================================
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-id').value;
+            const date = document.getElementById('input-date').value;
+            const account = document.getElementById('input-account').value;
+            const type = document.getElementById('input-tx-type').value;
+            const ticker = document.getElementById('input-ticker').value.trim().toUpperCase();
+            const name = document.getElementById('input-name').value.trim();
+            const qty = Number(document.getElementById('input-qty').value) || 0;
+            const price = Number(document.getElementById('input-price').value) || 0;
+            const fee = Number(document.getElementById('input-fee').value) || 0;
+            const tax = Number(document.getElementById('input-tax').value) || 0;
+            const realizedPLRaw = document.getElementById('input-realized-pl').value;
+            const realizedPL = (type === 'sell' || type === 'margin_pl') && realizedPLRaw !== ''
+                ? Number(realizedPLRaw)
+                : 0;
+
+
+            if (!date || !name) {
+                showToast('約定日と銘柄名・摘要を入力してください。', 'error');
+                return;
+            }
+            if ((type === 'buy' || type === 'sell') && (qty <= 0 || price <= 0)) {
+                showToast('買付・売却の場合は数量と単価を正しく入力してください。', 'error');
+                return;
+            }
+
+
+            if (editId) {
+                const idx = transactions.findIndex(t => t.id === editId);
+                if (idx !== -1) {
+                    transactions[idx] = {
+                        ...transactions[idx],
+                        date, account, type, ticker, name, qty, price, fee, tax, realizedPL
+                    };
+                    showToast('取引記録を更新しました。', 'success');
+                }
+                cancelEdit();
+            } else {
+                transactions.push({
+                    id: 'stx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    date, account, type, ticker, name, qty, price, fee, tax, realizedPL,
+                    createdAt: Date.now()
+                });
+                showToast('新しい取引を記帳しました。', 'success');
+
+
+                // 連続入力向けに銘柄コード・名前・数量・単価・手数料・税金・損益をクリア
+                document.getElementById('input-ticker').value = '';
+                document.getElementById('input-name').value = '';
+                document.getElementById('input-qty').value = '';
+                document.getElementById('input-price').value = '';
+                document.getElementById('input-fee').value = '';
+                document.getElementById('input-tax').value = '';
+                document.getElementById('input-realized-pl').value = '';
+                document.getElementById('avg-cost-hint').classList.add('hidden');
+                onFormFieldChange();
+            }
+
+
+            saveToStorage();
+            updateMonthFilterOptions();
+            renderAll();
+        }
+
+
+        function startEdit(id) {
+            const item = transactions.find(t => t.id === id);
+            if (!item) return;
+
+
+            document.getElementById('edit-id').value = item.id;
+            document.getElementById('input-date').value = item.date;
+            document.getElementById('input-account').value = item.account;
+            document.getElementById('input-tx-type').value = item.type;
+            handleTxTypeChange();
+
+
+            document.getElementById('input-ticker').value = item.ticker || '';
+            document.getElementById('input-name').value = item.name || '';
+            document.getElementById('input-qty').value = item.qty || '';
+            document.getElementById('input-price').value = item.price || '';
+            document.getElementById('input-fee').value = item.fee || '';
+            document.getElementById('input-tax').value = item.tax || '';
+            document.getElementById('input-realized-pl').value = (item.type === 'sell' || item.type === 'margin_pl') ? item.realizedPL : '';
+
+
+            onFormFieldChange();
+
+
+            document.getElementById('form-title').textContent = '取引記録の編集';
+            document.getElementById('form-header-icon').className = 'fa-solid fa-pen text-amber-600';
+            document.getElementById('edit-badge').classList.remove('hidden');
+            document.getElementById('btn-cancel-edit').classList.remove('hidden');
+            document.getElementById('btn-submit').innerHTML = '<i class="fa-solid fa-check"></i><span>更新する</span>';
+            document.getElementById('btn-submit').className = 'w-full py-2 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold shadow-sm transition flex items-center justify-center gap-1.5';
+
+
+            document.getElementById('form-section').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+
+        function cancelEdit() {
+            document.getElementById('edit-id').value = '';
+            setDefaultDate();
+            document.getElementById('input-ticker').value = '';
+            document.getElementById('input-name').value = '';
+            document.getElementById('input-qty').value = '';
+            document.getElementById('input-price').value = '';
+            document.getElementById('input-fee').value = '';
+            document.getElementById('input-tax').value = '';
+            document.getElementById('input-realized-pl').value = '';
+            document.getElementById('avg-cost-hint').classList.add('hidden');
+            handleTxTypeChange();
+
+
+            document.getElementById('form-title').textContent = '株式取引・入出金の記帳';
+            document.getElementById('form-header-icon').className = 'fa-solid fa-pen-to-square text-indigo-600';
+            document.getElementById('edit-badge').classList.add('hidden');
+            document.getElementById('btn-cancel-edit').classList.add('hidden');
+            document.getElementById('btn-submit').innerHTML = '<i class="fa-solid fa-plus"></i><span>記帳する</span>';
+            document.getElementById('btn-submit').className = 'w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm transition flex items-center justify-center gap-1.5';
+        }
+
+
+        function prefillSellFromHolding(account, ticker, name, qty) {
+            cancelEdit();
+            document.getElementById('input-account').value = account;
+            document.getElementById('input-tx-type').value = 'sell';
+            handleTxTypeChange();
+            document.getElementById('input-ticker').value = ticker;
+            document.getElementById('input-name').value = name;
+            document.getElementById('input-qty').value = qty;
+            onTickerOrQtyChange();
+
+
+            document.getElementById('form-section').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => document.getElementById('input-price').focus(), 200);
+            showToast(`${name}（${ticker}）の売却フォームをセットしました。売却単価を入力してください。`, 'info');
+        }
+
+
+        function deleteTransaction(id) {
+            const idx = transactions.findIndex(t => t.id === id);
+            if (idx === -1) return;
+
+
+            if (document.getElementById('edit-id').value === id) {
+                cancelEdit();
+            }
+
+
+            lastDeletedItem = transactions[idx];
+            transactions.splice(idx, 1);
+            saveToStorage();
+            updateMonthFilterOptions();
+            renderAll();
+            showToast('取引を削除しました。', 'info', true);
+        }
+
+
+        function undoDelete() {
+            if (!lastDeletedItem) return;
+            transactions.push(lastDeletedItem);
+            lastDeletedItem = null;
+            saveToStorage();
+            updateMonthFilterOptions();
+            renderAll();
+            showToast('削除した取引を元に戻しました。', 'success');
+        }
+
+
+        // ==========================================
+        // 6. 描画ロジック（KPI・保有サマリー・出納帳テーブル）
+        // ==========================================
+        function clearKeyword() {
+            document.getElementById('filter-keyword').value = '';
+            renderAll();
+        }
+
+
+        function toggleHoldingsPanel() {
+            isHoldingsOpen = !isHoldingsOpen;
+            const body = document.getElementById('holdings-panel-body');
+            const chevron = document.getElementById('holdings-chevron');
+            if (isHoldingsOpen) {
+                body.classList.remove('hidden');
+                chevron.style.transform = 'rotate(0deg)';
+            } else {
+                body.classList.add('hidden');
+                chevron.style.transform = 'rotate(180deg)';
+            }
+        }
+
+
+        function updateMonthFilterOptions() {
+            const select = document.getElementById('filter-month');
+            const currentVal = select.value;
+
+
+            const monthsSet = new Set();
+            transactions.forEach(t => {
+                if (t.date && t.date.length >= 7) {
+                    monthsSet.add(t.date.substring(0, 7));
+                }
+            });
+
+
+            const now = new Date();
+            monthsSet.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+
+
+            const sortedMonths = Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+
+
+            let html = '<option value="all">全期間</option>';
+            sortedMonths.forEach(ym => {
+                const [y, m] = ym.split('-');
+                html += `<option value="${ym}">${y}年${parseInt(m, 10)}月</option>`;
+            });
+
+
+            select.innerHTML = html;
+            if (Array.from(select.options).some(opt => opt.value === currentVal)) {
+                select.value = currentVal;
+            } else {
+                select.value = 'all';
+            }
+        }
+
+
+        function renderAll() {
+            const selectedAccount = document.getElementById('filter-account').value;
+            const selectedMonth = document.getElementById('filter-month').value;
+            const selectedTxType = document.getElementById('filter-tx-type').value;
+            const keyword = document.getElementById('filter-keyword').value.trim().toLowerCase();
+
+
+            const clearBtn = document.getElementById('clear-keyword-btn');
+            if (keyword) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+
+
+            // 1. 口座フィルター適用後の全時系列データを作成
+            const accountFilteredAll = [...transactions]
+                .filter(t => selectedAccount === 'all' || t.account === selectedAccount)
+                .sort((a, b) => {
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return (a.createdAt || 0) - (b.createdAt || 0);
+                });
+
+
+            // 期首残高（選択口座に応じた初期買付余力）
+            const initialCarryOver = selectedAccount === 'all'
+                ? Object.values(carryOvers).reduce((s, v) => s + (Number(v) || 0), 0)
+                : (Number(carryOvers[selectedAccount]) || 0);
+
+
+            let runningBalance = initialCarryOver;
+            let carryOverForPeriod = initialCarryOver;
+
+
+            // 月別フィルター選択時：選択月より前のキャッシュ増減を合算して「前月繰越」を算出
+            if (selectedMonth !== 'all') {
+                const priorTx = accountFilteredAll.filter(t => t.date.substring(0, 7) < selectedMonth);
+                priorTx.forEach(t => {
+                    runningBalance += calcCashImpact(t);
+                });
+                carryOverForPeriod = runningBalance;
+            }
+
+
+            // 対象期間の取引を抽出し、各行の口座残高を付与
+            const periodTx = selectedMonth === 'all'
+                ? accountFilteredAll
+                : accountFilteredAll.filter(t => t.date.substring(0, 7) === selectedMonth);
+
+
+            const periodWithBalance = periodTx.map(t => {
+                const cashImpact = calcCashImpact(t);
+                runningBalance += cashImpact;
+                return {
+                    ...t,
+                    cashImpact,
+                    balanceAfter: runningBalance
+                };
+            });
+
+
+            // 取引区分・キーワードによる絞り込み
+            const isSubFiltered = (selectedTxType !== 'all' || keyword !== '');
+            const displayRows = periodWithBalance.filter(t => {
+                if (selectedTxType !== 'all' && t.type !== selectedTxType) return false;
+                if (keyword) {
+                    const matchTicker = (t.ticker || '').toLowerCase().includes(keyword);
+                    const matchName = (t.name || '').toLowerCase().includes(keyword);
+                    if (!matchTicker && !matchName) return false;
+                }
+                return true;
+            });
+
+
+            // 2. KPIサマリー更新
+            updateKPIs(periodTx, carryOverForPeriod, runningBalance, selectedMonth);
+
+
+            // 3. 保有銘柄サマリー更新
+            renderHoldingsTable(selectedAccount);
+
+
+            // 4. 出納帳テーブル描画
+            renderLedgerTable(displayRows, carryOverForPeriod, isSubFiltered, selectedMonth);
+
+
+            // 印刷用ヘッダー更新
+            const accLabel = selectedAccount === 'all' ? 'すべての口座' : selectedAccount;
+            const monLabel = selectedMonth === 'all' ? '全期間' : `${selectedMonth.split('-')[0]}年${parseInt(selectedMonth.split('-')[1], 10)}月分`;
+            document.getElementById('print-filter-label').textContent = `対象口座: ${accLabel} ／ 対象期間: ${monLabel}`;
+            const now = new Date();
+            document.getElementById('print-date-label').textContent = `出力日: ${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+        }
+
+
+        function updateKPIs(periodTx, carryOverForPeriod, endBalance, selectedMonth) {
+            // 口座残高
+            const balEl = document.getElementById('kpi-balance');
+            balEl.textContent = formatCurrency(endBalance);
+            balEl.className = `text-2xl sm:text-3xl font-bold tracking-tight tabular-nums ${endBalance < 0 ? 'text-rose-400' : 'text-white'}`;
+            document.getElementById('kpi-carryover-sub').textContent = `${selectedMonth === 'all' ? '期首残高' : '前月繰越'}: ${formatCurrency(carryOverForPeriod)}`;
+
+
+            // 実現損益合計（売却・信用決済）
+            const plTxs = periodTx.filter(t => t.type === 'sell' || t.type === 'margin_pl');
+            const totalPL = plTxs.reduce((s, t) => s + (Number(t.realizedPL) || 0), 0);
+            const winCount = plTxs.filter(t => (Number(t.realizedPL) || 0) > 0).length;
+            const winRate = plTxs.length > 0 ? Math.round((winCount / plTxs.length) * 100) : null;
+
+
+            const plEl = document.getElementById('kpi-realized-pl');
+            plEl.textContent = (totalPL > 0 ? '+' : '') + formatCurrency(totalPL);
+            plEl.className = `text-2xl font-bold tabular-nums ${totalPL > 0 ? 'text-emerald-600' : (totalPL < 0 ? 'text-rose-600' : 'text-slate-800')}`;
+            document.getElementById('kpi-win-rate').textContent = `決済: ${plTxs.length}件（勝率: ${winRate !== null ? winRate + '%' : '-%'}）`;
+
+
+            // 配当金・分配金累計
+            const divTxs = periodTx.filter(t => t.type === 'dividend');
+            const divGross = divTxs.reduce((s, t) => s + (Number(t.price) || 0), 0);
+            const divTax = divTxs.reduce((s, t) => s + (Number(t.tax) || 0), 0);
+            const divNet = divGross - divTax;
+
+
+            document.getElementById('kpi-dividends').textContent = formatCurrency(divNet);
+            document.getElementById('kpi-dividends-gross').textContent = `税引前受取額: ${formatCurrency(divGross)}`;
+
+
+            // 手数料・税金合計
+            const totalFee = periodTx.reduce((s, t) => s + (Number(t.fee) || 0), 0);
+            const totalTax = periodTx.reduce((s, t) => s + (Number(t.tax) || 0), 0);
+            document.getElementById('kpi-fees-taxes').textContent = formatCurrency(totalFee + totalTax);
+            document.getElementById('kpi-fees-taxes-sub').textContent = `手数料: ${formatCurrency(totalFee)} ／ 税金: ${formatCurrency(totalTax)}`;
+        }
+
+
+        function renderHoldingsTable(selectedAccount) {
+            const holdingsMap = computeHoldingsMap();
+            const list = Object.values(holdingsMap)
+                .filter(h => (selectedAccount === 'all' || h.account === selectedAccount) && h.qty > 0)
+                .sort((a, b) => a.ticker.localeCompare(b.ticker));
+
+
+            const tbody = document.getElementById('holdings-tbody');
+            const badge = document.getElementById('holdings-count-badge');
+            const totalCostEl = document.getElementById('holdings-total-cost');
+
+
+            badge.textContent = `${list.length}銘柄`;
+            const sumBookValue = list.reduce((s, h) => s + Math.round(h.totalCost), 0);
+            totalCostEl.textContent = `保有取得総額: ${formatCurrency(sumBookValue)}`;
+
+
+            if (list.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="py-6 text-center text-xs text-slate-400">
+                            現在保有中の株式はありません（買付を記帳すると移動平均取得単価が自動集計されます）
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+
+            tbody.innerHTML = list.map(h => {
+                const plClass = h.realizedPL > 0 ? 'text-emerald-600' : (h.realizedPL < 0 ? 'text-rose-600' : 'text-slate-500');
+                const plStr = h.realizedPL === 0 ? '¥0' : `${h.realizedPL > 0 ? '+' : ''}${formatCurrency(h.realizedPL)}`;
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-2.5 px-4 whitespace-nowrap text-xs text-slate-600">${escapeHtml(h.account)}</td>
+                        <td class="py-2.5 px-4 whitespace-nowrap font-mono font-bold text-indigo-700">${escapeHtml(h.ticker)}</td>
+                        <td class="py-2.5 px-4 font-medium text-slate-800">${escapeHtml(h.name)}</td>
+                        <td class="py-2.5 px-4 text-right font-bold tabular-nums text-slate-800">${h.qty.toLocaleString()} 株</td>
+                        <td class="py-2.5 px-4 text-right tabular-nums text-slate-700">¥${Math.round(h.avgCost).toLocaleString()}</td>
+                        <td class="py-2.5 px-4 text-right font-semibold tabular-nums text-slate-800">${formatCurrency(Math.round(h.totalCost))}</td>
+                        <td class="py-2.5 px-4 text-right font-semibold tabular-nums ${plClass}">${plStr}</td>
+                        <td class="py-2.5 px-4 text-center whitespace-nowrap">
+                            <button type="button" onclick="prefillSellFromHolding('${escapeAttr(h.account)}', '${escapeAttr(h.ticker)}', '${escapeAttr(h.name)}', ${h.qty})" class="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition">
+                                売却記帳
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+
+        function renderLedgerTable(rows, carryOver, isSubFiltered, selectedMonth) {
+            const tbody = document.getElementById('ledger-tbody');
+            const tfoot = document.getElementById('ledger-tfoot');
+            const emptyState = document.getElementById('empty-state');
+
+
+            let html = '';
+
+
+            // 絞り込みなしの場合は先頭に繰越行を表示
+            if (!isSubFiltered) {
+                const carryLabel = selectedMonth === 'all' ? '期首預り金（初期買付余力）' : '前月より繰越';
+                html += `
+                    <tr class="bg-slate-50/90 text-slate-600">
+                        <td class="py-2.5 px-2.5 tabular-nums whitespace-nowrap">-</td>
+                        <td class="py-2.5 px-2.5 whitespace-nowrap">-</td>
+                        <td class="py-2.5 px-2.5 text-center whitespace-nowrap">
+                            <span class="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-bold text-[11px]">繰越</span>
+                        </td>
+                        <td class="py-2.5 px-2.5">-</td>
+                        <td class="py-2.5 px-2.5 font-medium">${carryLabel}</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right">-</td>
+                        <td class="py-2.5 px-2.5 text-right font-bold text-slate-900 tabular-nums bg-slate-100/80 whitespace-nowrap">${formatCurrency(carryOver)}</td>
+                        <td class="no-print py-2.5 px-2 text-center text-slate-400">-</td>
+                    </tr>
+                `;
+            }
+
+
+            if (rows.length === 0) {
+                tbody.innerHTML = html;
+                tfoot.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+
+            emptyState.classList.add('hidden');
+
+
+            rows.forEach(item => {
+                const meta = TX_TYPE_META[item.type] || { label: item.type, badgeClass: 'bg-slate-100 text-slate-700' };
+                const inAmount = item.cashImpact > 0 ? item.cashImpact : 0;
+                const outAmount = item.cashImpact < 0 ? Math.abs(item.cashImpact) : 0;
+
+
+                const feeTaxSum = (Number(item.fee) || 0) + (Number(item.tax) || 0);
+                const feeTaxStr = feeTaxSum > 0 ? formatNumber(feeTaxSum) : '-';
+
+
+                const qtyStr = (Number(item.qty) || 0) > 0 ? formatNumber(item.qty) : '-';
+                const priceStr = (Number(item.price) || 0) !== 0 && (item.type === 'buy' || item.type === 'sell')
+                    ? formatNumber(item.price)
+                    : '-';
+
+
+                let plHtml = '<span class="text-slate-400">-</span>';
+                if (item.type === 'sell' || item.type === 'margin_pl') {
+                    const pl = Number(item.realizedPL) || 0;
+                    const cls = pl > 0 ? 'text-emerald-600 font-bold' : (pl < 0 ? 'text-rose-600 font-bold' : 'text-slate-600');
+                    plHtml = `<span class="${cls}">${pl > 0 ? '+' : ''}${formatNumber(pl)}</span>`;
+                }
+
+
+                const balCls = item.balanceAfter < 0 ? 'text-rose-600' : 'text-slate-900';
+
+
+                html += `
+                    <tr class="hover:bg-indigo-50/40 transition">
+                        <td class="py-2.5 px-2.5 tabular-nums text-slate-700 whitespace-nowrap">${formatDateJP(item.date)}</td>
+                        <td class="py-2.5 px-2.5 text-slate-600 whitespace-nowrap">${escapeHtml(item.account)}</td>
+                        <td class="py-2.5 px-2.5 text-center whitespace-nowrap">
+                            <span class="inline-block px-2 py-0.5 rounded border text-[11px] font-bold ${meta.badgeClass}">
+                                ${meta.label}
+                            </span>
+                        </td>
+                        <td class="py-2.5 px-2.5 font-mono font-bold text-slate-700 whitespace-nowrap">${escapeHtml(item.ticker || '-')}</td>
+                        <td class="py-2.5 px-2.5 font-medium text-slate-800">${escapeHtml(item.name)}</td>
+                        <td class="py-2.5 px-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">${qtyStr}</td>
+                        <td class="py-2.5 px-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">${priceStr}</td>
+                        <td class="py-2.5 px-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${feeTaxStr}</td>
+                        <td class="py-2.5 px-2.5 text-right font-semibold tabular-nums text-emerald-600 whitespace-nowrap">${inAmount > 0 ? formatNumber(inAmount) : ''}</td>
+                        <td class="py-2.5 px-2.5 text-right font-semibold tabular-nums text-rose-600 whitespace-nowrap">${outAmount > 0 ? formatNumber(outAmount) : ''}</td>
+                        <td class="py-2.5 px-2.5 text-right tabular-nums whitespace-nowrap">${plHtml}</td>
+                        <td class="py-2.5 px-2.5 text-right font-bold tabular-nums ${balCls} bg-slate-50/80 whitespace-nowrap">${formatCurrency(item.balanceAfter)}</td>
+                        <td class="no-print py-2 px-2 text-center whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1">
+                                <button onclick="startEdit('${item.id}')" class="p-1.5 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition" title="編集">
+                                    <i class="fa-solid fa-pen text-[11px]"></i>
+                                </button>
+                                <button onclick="deleteTransaction('${item.id}')" class="p-1.5 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition" title="削除">
+                                    <i class="fa-solid fa-trash-can text-[11px]"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+
+            tbody.innerHTML = html;
+
+
+            // フッター合計行
+            const sumFeeTax = rows.reduce((s, r) => s + (Number(r.fee) || 0) + (Number(r.tax) || 0), 0);
+            const sumIn = rows.reduce((s, r) => s + (r.cashImpact > 0 ? r.cashImpact : 0), 0);
+            const sumOut = rows.reduce((s, r) => s + (r.cashImpact < 0 ? Math.abs(r.cashImpact) : 0), 0);
+            const sumPL = rows.filter(r => r.type === 'sell' || r.type === 'margin_pl').reduce((s, r) => s + (Number(r.realizedPL) || 0), 0);
+            const finalBal = rows[rows.length - 1].balanceAfter;
+            const sumPLCls = sumPL > 0 ? 'text-emerald-700' : (sumPL < 0 ? 'text-rose-700' : 'text-slate-700');
+
+
+            tfoot.innerHTML = `
+                <tr>
+                    <td colspan="7" class="py-3 px-3 text-right text-slate-600">
+                        ${isSubFiltered ? '抽出結果 合計' : '当期 合計 / 期末残高'}
+                    </td>
+                    <td class="py-3 px-2.5 text-right text-slate-600 tabular-nums whitespace-nowrap">${formatNumber(sumFeeTax)}</td>
+                    <td class="py-3 px-2.5 text-right text-emerald-700 tabular-nums whitespace-nowrap">${formatCurrency(sumIn)}</td>
+                    <td class="py-3 px-2.5 text-right text-rose-700 tabular-nums whitespace-nowrap">${formatCurrency(sumOut)}</td>
+                    <td class="py-3 px-2.5 text-right ${sumPLCls} tabular-nums whitespace-nowrap">${sumPL > 0 ? '+' : ''}${formatCurrency(sumPL)}</td>
+                    <td class="py-3 px-2.5 text-right text-slate-900 tabular-nums bg-slate-200/60 whitespace-nowrap">${isSubFiltered ? '-' : formatCurrency(finalBal)}</td>
+                    <td class="no-print"></td>
+                </tr>
+            `;
+        }
+
+
+        // ==========================================
+        // 7. 期首残高設定・確認モーダル・CSV入出力・サンプルデータ
+        // ==========================================
+        function openCarryOverModal() {
+            document.getElementById('carry-tokutei-ari').value = carryOvers['特定(源泉あり)'] || 0;
+            document.getElementById('carry-tokutei-nashi').value = carryOvers['特定(源泉なし)'] || 0;
+            document.getElementById('carry-ippan').value = carryOvers['一般'] || 0;
+            document.getElementById('carry-nisa-growth').value = carryOvers['NISA成長'] || 0;
+            document.getElementById('carry-nisa-tsumitate').value = carryOvers['NISAつみたて'] || 0;
+            document.getElementById('carryover-modal').classList.remove('hidden');
+        }
+
+
+        function closeCarryOverModal() {
+            document.getElementById('carryover-modal').classList.add('hidden');
+        }
+
+
+        function saveCarryOver(e) {
+            e.preventDefault();
+            carryOvers['特定(源泉あり)'] = parseInt(document.getElementById('carry-tokutei-ari').value, 10) || 0;
+            carryOvers['特定(源泉なし)'] = parseInt(document.getElementById('carry-tokutei-nashi').value, 10) || 0;
+            carryOvers['一般'] = parseInt(document.getElementById('carry-ippan').value, 10) || 0;
+            carryOvers['NISA成長'] = parseInt(document.getElementById('carry-nisa-growth').value, 10) || 0;
+            carryOvers['NISAつみたて'] = parseInt(document.getElementById('carry-nisa-tsumitate').value, 10) || 0;
+
+
+            saveToStorage();
+            closeCarryOverModal();
+            renderAll();
+            showToast('口座別の期首残高を保存しました。', 'success');
+        }
+
+
+        function toggleMoreMenu() {
+            document.getElementById('more-menu').classList.toggle('hidden');
+        }
+
+
+        function confirmAction(actionType) {
+            document.getElementById('more-menu').classList.add('hidden');
+            const modal = document.getElementById('confirm-modal');
+            const title = document.getElementById('confirm-title');
+            const msg = document.getElementById('confirm-message');
+            const btn = document.getElementById('confirm-execute-btn');
+            const iconBg = document.getElementById('confirm-icon-bg');
+            const icon = document.getElementById('confirm-icon');
+
+
+            if (actionType === 'sample') {
+                title.textContent = 'サンプルデータ読込';
+                msg.textContent = '現在のデータをリアルな日本株取引のサンプルデータ（2026年10月〜11月分）で上書きします。よろしいですか？';
+                iconBg.className = 'w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0';
+                icon.className = 'fa-solid fa-wand-magic-sparkles';
+                btn.className = 'px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition';
+                btn.onclick = () => {
+                    loadSampleData(false);
+                    closeConfirmModal();
+                };
+            } else if (actionType === 'reset') {
+                title.textContent = '全データ消去（初期化）';
+                msg.textContent = 'すべての取引記録と期首残高を完全に消去します。この操作は元に戻せません。よろしいですか？';
+                iconBg.className = 'w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0';
+                icon.className = 'fa-solid fa-triangle-exclamation';
+                btn.className = 'px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm transition';
+                btn.onclick = () => {
+                    transactions = [];
+                    ACCOUNTS.forEach(a => carryOvers[a] = 0);
+                    cancelEdit();
+                    saveToStorage();
+                    updateMonthFilterOptions();
+                    renderAll();
+                    closeConfirmModal();
+                    showToast('すべてのデータを消去しました。', 'info');
+                };
+            }
+            modal.classList.remove('hidden');
+        }
+
+
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+        }
+
+
+        function loadSampleData(isSilent = false) {
+            carryOvers = {
+                '特定(源泉あり)': 500000,
+                '特定(源泉なし)': 0,
+                '一般': 0,
+                'NISA成長': 300000,
+                'NISAつみたて': 0
+            };
+            transactions = [
+                { id: 'smp_s1', date: '2026-10-02', account: '特定(源泉あり)', type: 'deposit', ticker: '', name: '三菱UFJ銀行より買付資金入金', qty: 0, price: 1000000, fee: 0, tax: 0, realizedPL: 0, createdAt: 1001 },
+                { id: 'smp_s2', date: '2026-10-06', account: '特定(源泉あり)', type: 'buy', ticker: '7203', name: 'トヨタ自動車', qty: 200, price: 2650, fee: 0, tax: 0, realizedPL: 0, createdAt: 1002 },
+                { id: 'smp_s3', date: '2026-10-14', account: 'NISA成長', type: 'buy', ticker: '8306', name: '三菱UFJフィナンシャルG', qty: 100, price: 1580, fee: 0, tax: 0, realizedPL: 0, createdAt: 1003 },
+                { id: 'smp_s4', date: '2026-10-21', account: '特定(源泉あり)', type: 'buy', ticker: '7203', name: 'トヨタ自動車', qty: 100, price: 2590, fee: 0, tax: 0, realizedPL: 0, createdAt: 1004 },
+                { id: 'smp_s5', date: '2026-11-04', account: '特定(源泉あり)', type: 'sell', ticker: '7203', name: 'トヨタ自動車', qty: 200, price: 2820, fee: 0, tax: 7719, realizedPL: 38000, createdAt: 1005 },
+                { id: 'smp_s6', date: '2026-11-12', account: '特定(源泉あり)', type: 'buy', ticker: '9432', name: '日本電信電話 (NTT)', qty: 1000, price: 152, fee: 0, tax: 0, realizedPL: 0, createdAt: 1006 },
+                { id: 'smp_s7', date: '2026-11-19', account: '特定(源泉あり)', type: 'dividend', ticker: '7203', name: 'トヨタ自動車 中間配当金', qty: 300, price: 13500, fee: 0, tax: 2742, realizedPL: 0, createdAt: 1007 },
+                { id: 'smp_s8', date: '2026-11-25', account: 'NISA成長', type: 'dividend', ticker: '8306', name: '三菱UFJフィナンシャルG 配当金（非課税）', qty: 100, price: 2500, fee: 0, tax: 0, realizedPL: 0, createdAt: 1008 }
+            ];
+            saveToStorage();
+            updateMonthFilterOptions();
+            document.getElementById('filter-account').value = 'all';
+            document.getElementById('filter-month').value = 'all';
+            renderAll();
+            if (!isSilent) {
+                showToast('日本株のサンプルデータを読み込みました。', 'success');
+            }
+        }
+
+
+        function exportCSV() {
+            const sortedAll = [...transactions].sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                return (a.createdAt || 0) - (b.createdAt || 0);
+            });
+
+
+            const totalCarry = Object.values(carryOvers).reduce((s, v) => s + (Number(v) || 0), 0);
+            let balance = totalCarry;
+
+
+            const rows = [
+                ['約定日', '口座区分', '取引区分コード', '取引区分', '銘柄コード', '銘柄名・摘要', '数量', '約定単価・金額', '手数料', '税金', '受入金額', '払出金額', '実現損益', '全口座合算残高']
+            ];
+
+
+            // 期首残高メタ行
+            ACCOUNTS.forEach(acc => {
+                rows.push(['', acc, 'carryover', '期首残高', '', `${acc} 期首預り金`, '', '', '', '', '', '', '', String(carryOvers[acc] || 0)]);
+            });
+
+
+            sortedAll.forEach(t => {
+                const impact = calcCashImpact(t);
+                balance += impact;
+                const meta = TX_TYPE_META[t.type] || { label: t.type };
+                rows.push([
+                    t.date,
+                    t.account,
+                    t.type,
+                    meta.label,
+                    t.ticker || '',
+                    t.name || '',
+                    String(t.qty || 0),
+                    String(t.price || 0),
+                    String(t.fee || 0),
+                    String(t.tax || 0),
+                    impact > 0 ? String(impact) : '',
+                    impact < 0 ? String(Math.abs(impact)) : '',
+                    (t.type === 'sell' || t.type === 'margin_pl') ? String(t.realizedPL || 0) : '',
+                    String(balance)
+                ]);
+            });
+
+
+            const csvContent = rows.map(row =>
+                row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+            ).join('\r\n');
+
+
+            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+            const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+
+
+            const now = new Date();
+            const fileName = `株式売買出納帳_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.csv`;
+
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+
+            showToast('CSVファイルを出力しました。', 'success');
+        }
+
+
+        function importCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target.result.replace(/^\uFEFF/, '');
+                    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+                    if (lines.length < 2) throw new Error('有効なデータ行がありません。');
+
+
+                    const imported = [];
+                    const newCarry = { ...carryOvers };
+
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const cols = parseCSVLine(lines[i]);
+                        if (cols.length < 8) continue;
+
+
+                        const [dateStr, account, typeCode, , ticker, name, qtyStr, priceStr, feeStr, taxStr, , , plStr, balStr] = cols;
+
+
+                        if (typeCode === 'carryover' && ACCOUNTS.includes(account)) {
+                            newCarry[account] = parseInt((balStr || '0').replace(/,/g, ''), 10) || 0;
+                            continue;
+                        }
+
+
+                        const normDate = dateStr.replace(/\//g, '-').trim();
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(normDate)) continue;
+
+
+                        const validType = TX_TYPE_META[typeCode] ? typeCode : 'buy';
+                        const validAcc = ACCOUNTS.includes(account) ? account : '特定(源泉あり)';
+
+
+                        imported.push({
+                            id: 'imp_s_' + Date.now() + '_' + i,
+                            date: normDate,
+                            account: validAcc,
+                            type: validType,
+                            ticker: (ticker || '').toUpperCase(),
+                            name: name || '',
+                            qty: Number((qtyStr || '0').replace(/,/g, '')) || 0,
+                            price: Number((priceStr || '0').replace(/,/g, '')) || 0,
+                            fee: Number((feeStr || '0').replace(/,/g, '')) || 0,
+                            tax: Number((taxStr || '0').replace(/,/g, '')) || 0,
+                            realizedPL: Number((plStr || '0').replace(/,/g, '')) || 0,
+                            createdAt: Date.now() + i
+                        });
+                    }
+
+
+                    if (imported.length === 0) throw new Error('インポート可能な取引データが見つかりませんでした。');
+
+
+                    carryOvers = newCarry;
+                    transactions = imported;
+                    saveToStorage();
+                    updateMonthFilterOptions();
+                    renderAll();
+                    showToast(`${imported.length}件の株式取引データを読み込みました。`, 'success');
+                } catch (err) {
+                    showToast('CSV読込エラー: ' + err.message, 'error');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (inQuotes) {
+                    if (char === '"' && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        current += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+
+        // ==========================================
+        // 8. ユーティリティ・トースト
+        // ==========================================
+        function formatCurrency(num) {
+            const n = Math.round(Number(num) || 0);
+            const sign = n < 0 ? '-' : '';
+            return `${sign}¥${Math.abs(n).toLocaleString('ja-JP')}`;
+        }
+
+
+        function formatNumber(num) {
+            return (Number(num) || 0).toLocaleString('ja-JP');
+        }
+
+
+        function formatDateJP(dateStr) {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            return `${parts[0]}/${parts[1]}/${parts[2]}`;
+        }
+
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+
+        function escapeAttr(str) {
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+
+        function showToast(message, type = 'info', allowUndo = false) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+
+            let iconHtml = '<i class="fa-solid fa-circle-info text-indigo-400"></i>';
+            if (type === 'success') iconHtml = '<i class="fa-solid fa-circle-check text-emerald-400"></i>';
+            if (type === 'error') iconHtml = '<i class="fa-solid fa-circle-exclamation text-rose-400"></i>';
+
+
+            toast.className = 'toast-enter pointer-events-auto bg-slate-900 text-white px-4 py-3 rounded-xl shadow-lg border border-slate-700 flex items-center justify-between gap-3 text-xs';
+            toast.innerHTML = `
+                <div class="flex items-center gap-2.5">
+                    ${iconHtml}
+                    <span class="font-medium leading-snug">${escapeHtml(message)}</span>
+                </div>
+                ${allowUndo ? `<button onclick="undoDelete(); this.parentElement.remove();" class="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-amber-300 font-bold shrink-0 transition">元に戻す</button>` : ''}
+            `;
+
+
+            container.appendChild(toast);
+
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.2s ease';
+                setTimeout(() => toast.remove(), 200);
+            }, allowUndo ? 5000 : 3000);
+        }
+    </script>
+</body>
+</html>
+```
